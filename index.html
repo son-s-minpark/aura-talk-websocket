@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AuraTalk 배포 서버 WebSocket 테스트</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .environment-info {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #2196f3;
+        }
+        .section {
+            margin-bottom: 25px;
+            padding: 20px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            background: #fafafa;
+        }
+        .section h3 {
+            margin-top: 0;
+            color: #5E35B1;
+        }
+        input, textarea, button, select {
+            width: 100%;
+            padding: 12px;
+            margin: 8px 0;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        button {
+            background: #5E35B1;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background: #4527A0;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+        .connected {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .disconnected {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        .messages {
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 15px;
+            background: white;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+        }
+        .message {
+            margin-bottom: 10px;
+            padding: 8px;
+            border-radius: 4px;
+        }
+        .sent {
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+        }
+        .received {
+            background: #f3e5f5;
+            border-left: 4px solid #9c27b0;
+        }
+        .system {
+            background: #fff3e0;
+            border-left: 4px solid #ff9800;
+        }
+        .error {
+            background: #ffebee;
+            border-left: 4px solid #f44336;
+        }
+        .timestamp {
+            color: #666;
+            font-size: 11px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .login-section {
+            background: #f0f8ff;
+            border: 1px solid #b3d9ff;
+        }
+        .swagger-link {
+            display: inline-block;
+            padding: 8px 16px;
+            background: #17a2b8;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            margin: 5px 0;
+        }
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌐 AuraTalk 배포 서버 WebSocket 테스트</h1>
+        
+        <div class="environment-info">
+            <h4>🚀 배포 환경 정보</h4>
+            <p><strong>서버:</strong> https://api.auratalk.kro.kr</p>
+            <p><strong>WebSocket:</strong> https://api.auratalk.kro.kr/ws (HTTPS → WSS 자동 업그레이드)</p>
+            <p><strong>Swagger UI:</strong> <a href="https://api.auratalk.kro.kr/swagger-ui/index.html" target="_blank" class="swagger-link">API 문서 보기</a></p>
+        </div>
+        
+        <div class="grid">
+            <div>
+                <div class="section login-section">
+                    <h3>🔑 1단계: JWT 토큰 받기</h3>
+                    <p>먼저 Swagger UI에서 로그인하여 JWT 토큰을 받으세요:</p>
+                    <ol>
+                        <li>위의 "API 문서 보기" 링크 클릭</li>
+                        <li>User Controller → POST /api/users (회원가입) 또는</li>
+                        <li>User Controller → POST /api/users/login (로그인)</li>
+                        <li>응답에서 받은 "token" 복사</li>
+                        <li>아래 토큰 필드에 붙여넣기 (Bearer 없이)</li>
+                    </ol>
+                    <textarea id="jwtTokenHelp" placeholder="예시 토큰 형태:
+eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0QGV4YW1wbGUuY29tIiwidXNlcklkIjoxLCJpYXQiOjE2..." rows="3" readonly></textarea>
+                </div>
+
+                <div class="section">
+                    <h3>🔐 2단계: WebSocket 연결</h3>
+                    <input type="text" id="serverUrl" placeholder="서버 URL" value="https://api.auratalk.kro.kr/ws" readonly>
+                    <textarea id="authToken" placeholder="JWT 토큰을 여기에 붙여넣으세요 (Bearer 제외)" rows="3"></textarea>
+                    <button id="connectBtn" onclick="connect()">연결</button>
+                    <button id="disconnectBtn" onclick="disconnect()" disabled>연결 해제</button>
+                    <div id="connectionStatus" class="status disconnected">연결되지 않음</div>
+                </div>
+
+                <div class="section">
+                    <h3>💬 3단계: 메시지 전송</h3>
+                    <input type="number" id="chatroomId" placeholder="채팅방 ID" value="1">
+                    <textarea id="messageContent" placeholder="메시지 내용" rows="3"></textarea>
+                    <select id="messageType">
+                        <option value="TEXT">텍스트</option>
+                        <option value="SYSTEM">시스템</option>
+                        <option value="FILE">파일</option>
+                        <option value="IMAGE">이미지</option>
+                        <option value="VIDEO">비디오</option>
+                        <option value="VOICE">음성</option>
+                    </select>
+                    <button id="sendBtn" onclick="sendMessage()" disabled>메시지 전송</button>
+                </div>
+
+                <div class="section">
+                    <h3>🎯 4단계: 채팅방 구독</h3>
+                    <input type="number" id="subscribeChatroomId" placeholder="구독할 채팅방 ID" value="1">
+                    <button id="subscribeBtn" onclick="subscribeToChatroom()" disabled>채팅방 구독</button>
+                    <div id="subscriptions"></div>
+                </div>
+            </div>
+
+            <div>
+                <div class="section">
+                    <h3>📨 수신된 메시지</h3>
+                    <button onclick="clearMessages()">메시지 지우기</button>
+                    <button onclick="testServerHealth()">서버 상태 확인</button>
+                    <div id="messages" class="messages"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.6.1/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <script>
+        let stompClient = null;
+        let subscriptions = new Map();
+
+        function addMessage(content, type = 'system') {
+            const messagesDiv = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            
+            const timestamp = new Date().toLocaleTimeString('ko-KR');
+            messageDiv.innerHTML = `
+                <div class="timestamp">[${timestamp}]</div>
+                <div>${content}</div>
+            `;
+            
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function updateConnectionStatus(connected) {
+            const statusDiv = document.getElementById('connectionStatus');
+            const connectBtn = document.getElementById('connectBtn');
+            const disconnectBtn = document.getElementById('disconnectBtn');
+            const sendBtn = document.getElementById('sendBtn');
+            const subscribeBtn = document.getElementById('subscribeBtn');
+
+            if (connected) {
+                statusDiv.textContent = '✅ WSS 보안 연결됨 (HTTPS → WSS)';
+                statusDiv.className = 'status connected';
+                connectBtn.disabled = true;
+                disconnectBtn.disabled = false;
+                sendBtn.disabled = false;
+                subscribeBtn.disabled = false;
+            } else {
+                statusDiv.textContent = '❌ 연결되지 않음';
+                statusDiv.className = 'status disconnected';
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+                sendBtn.disabled = true;
+                subscribeBtn.disabled = true;
+            }
+        }
+
+        function testServerHealth() {
+            addMessage('🔍 배포 서버 상태 확인 중...', 'system');
+            
+            fetch('https://api.auratalk.kro.kr/api/health')
+                .then(response => {
+                    if (response.ok) {
+                        return response.json();
+                    }
+                    throw new Error(`HTTP ${response.status}`);
+                })
+                .then(data => {
+                    addMessage('✅ 배포 서버 정상 작동: ' + JSON.stringify(data), 'system');
+                })
+                .catch(error => {
+                    addMessage('❌ 배포 서버 연결 실패: ' + error.message, 'error');
+                });
+        }
+
+        function connect() {
+            const serverUrl = document.getElementById('serverUrl').value;
+            const authToken = document.getElementById('authToken').value.trim();
+
+            if (!authToken) {
+                addMessage('⚠️ JWT 토큰이 필요합니다. 먼저 Swagger UI에서 로그인하여 토큰을 받으세요.', 'error');
+                alert('JWT 토큰을 입력해주세요. Swagger UI에서 로그인 후 토큰을 받을 수 있습니다.');
+                return;
+            }
+
+            addMessage('🔐 HTTPS 보안 연결 시도 중... (자동 WSS 업그레이드)', 'system');
+
+            try {
+                const socket = new SockJS(serverUrl);
+                stompClient = Stomp.over(socket);
+
+                // 디버그 로그 활성화 (테스트용)
+                stompClient.debug = function(str) {
+                    addMessage('🔧 DEBUG: ' + str, 'system');
+                };
+
+                const connectHeaders = {
+                    'Authorization': `Bearer ${authToken}`
+                };
+
+                stompClient.connect(connectHeaders, 
+                    function (frame) {
+                        addMessage('🎉 배포 서버 WebSocket 연결 성공! (WSS 보안 연결)', 'system');
+                        addMessage('📡 연결 정보: ' + frame, 'system');
+                        updateConnectionStatus(true);
+                    },
+                    function (error) {
+                        addMessage('❌ 연결 실패: ' + error, 'error');
+                        addMessage('💡 가능한 원인: 1) JWT 토큰 만료 2) 서버 오류 3) 네트워크 문제', 'error');
+                        updateConnectionStatus(false);
+                    }
+                );
+            } catch (error) {
+                addMessage('❌ 연결 초기화 실패: ' + error.message, 'error');
+                updateConnectionStatus(false);
+            }
+        }
+
+        function disconnect() {
+            if (stompClient !== null) {
+                subscriptions.forEach((subscription, chatroomId) => {
+                    subscription.unsubscribe();
+                });
+                subscriptions.clear();
+                updateSubscriptionsList();
+
+                stompClient.disconnect(function() {
+                    addMessage('👋 배포 서버 연결이 해제되었습니다.', 'system');
+                    updateConnectionStatus(false);
+                });
+            }
+        }
+
+        function sendMessage() {
+            const chatroomId = document.getElementById('chatroomId').value;
+            const content = document.getElementById('messageContent').value;
+            const type = document.getElementById('messageType').value;
+
+            if (!chatroomId || !content) {
+                alert('채팅방 ID와 메시지 내용을 입력해주세요.');
+                return;
+            }
+
+            if (stompClient && stompClient.connected) {
+                const message = {
+                    content: content,
+                    type: type
+                };
+
+                try {
+                    stompClient.send(`/app/chat/${chatroomId}`, {}, JSON.stringify(message));
+                    addMessage(`✅ 메시지 전송 완료: ${content} (채팅방 ${chatroomId})`, 'sent');
+                    document.getElementById('messageContent').value = '';
+                } catch (error) {
+                    addMessage(`❌ 메시지 전송 실패: ${error.message}`, 'error');
+                }
+            } else {
+                alert('WebSocket이 연결되지 않았습니다.');
+            }
+        }
+
+        function subscribeToChatroom() {
+            const chatroomId = document.getElementById('subscribeChatroomId').value;
+
+            if (!chatroomId) {
+                alert('채팅방 ID를 입력해주세요.');
+                return;
+            }
+
+            if (subscriptions.has(chatroomId)) {
+                alert('이미 구독 중인 채팅방입니다.');
+                return;
+            }
+
+            if (stompClient && stompClient.connected) {
+                try {
+                    const subscription = stompClient.subscribe(`/topic/chatroom/${chatroomId}`, function (message) {
+                        const messageData = JSON.parse(message.body);
+                        const senderName = messageData.sender?.nickname || '시스템';
+                        addMessage(`📩 [채팅방 ${chatroomId}] ${senderName}: ${messageData.content}`, 'received');
+                    });
+
+                    subscriptions.set(chatroomId, subscription);
+                    updateSubscriptionsList();
+                    addMessage(`🔔 채팅방 ${chatroomId} 구독 시작`, 'system');
+                } catch (error) {
+                    addMessage(`❌ 구독 실패: ${error.message}`, 'error');
+                }
+            } else {
+                alert('WebSocket이 연결되지 않았습니다.');
+            }
+        }
+
+        function unsubscribeFromChatroom(chatroomId) {
+            const subscription = subscriptions.get(chatroomId);
+            if (subscription) {
+                subscription.unsubscribe();
+                subscriptions.delete(chatroomId);
+                updateSubscriptionsList();
+                addMessage(`🔕 채팅방 ${chatroomId} 구독 해제`, 'system');
+            }
+        }
+
+        function updateSubscriptionsList() {
+            const subscriptionsDiv = document.getElementById('subscriptions');
+            subscriptionsDiv.innerHTML = '';
+
+            subscriptions.forEach((subscription, chatroomId) => {
+                const subDiv = document.createElement('div');
+                subDiv.style.cssText = 'margin: 5px 0; padding: 8px; background: #e8f5e8; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;';
+                subDiv.innerHTML = `
+                    <span>채팅방 ${chatroomId} 구독 중</span>
+                    <button onclick="unsubscribeFromChatroom('${chatroomId}')" style="width: auto; padding: 4px 8px; margin: 0; background: #dc3545;">구독 해제</button>
+                `;
+                subscriptionsDiv.appendChild(subDiv);
+            });
+        }
+
+        function clearMessages() {
+            document.getElementById('messages').innerHTML = '';
+        }
+
+        // 페이지 로드 시 초기 메시지
+        window.addEventListener('load', function() {
+            addMessage('🌐 배포 서버 WebSocket 테스트 페이지에 오신 것을 환영합니다!', 'system');
+            addMessage('🔐 HTTPS 환경에서 자동으로 WSS(WebSocket Secure) 연결을 사용합니다.', 'system');
+            addMessage('📝 1단계: Swagger UI에서 JWT 토큰을 받으세요.', 'system');
+            addMessage('🔌 2단계: 토큰을 입력하고 연결 버튼을 클릭하세요.', 'system');
+            
+            // 자동으로 서버 상태 확인
+            setTimeout(testServerHealth, 1000);
+        });
+    </script>
+</body>
+</html>
