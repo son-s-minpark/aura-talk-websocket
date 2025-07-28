@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AuraTalk 배포 서버 WebSocket 테스트</title>
+    <title>AuraTalk 배포 서버 WebSocket 테스트 (수정됨)</title>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -140,8 +140,23 @@
             border-radius: 4px;
             margin: 5px 0;
         }
+        .connection-method {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            padding: 10px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+        }
+        .method-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
         @media (max-width: 768px) {
             .grid {
+                grid-template-columns: 1fr;
+            }
+            .method-buttons {
                 grid-template-columns: 1fr;
             }
         }
@@ -149,12 +164,13 @@
 </head>
 <body>
     <div class="container">
-        <h1>🌐 AuraTalk 배포 서버 WebSocket 테스트</h1>
+        <h1>🌐 AuraTalk 배포 서버 WebSocket 테스트 (CORS 문제 해결)</h1>
         
         <div class="environment-info">
             <h4>🚀 배포 환경 정보</h4>
             <p><strong>서버:</strong> https://api.auratalk.kro.kr</p>
-            <p><strong>WebSocket:</strong> https://api.auratalk.kro.kr/ws (HTTPS → WSS 자동 업그레이드)</p>
+            <p><strong>감지된 문제:</strong> CORS 정책으로 인한 SockJS 연결 차단</p>
+            <p><strong>해결 방법:</strong> 순수 WebSocket 연결 시도</p>
             <p><strong>Swagger UI:</strong> <a href="https://api.auratalk.kro.kr/swagger-ui/index.html" target="_blank" class="swagger-link">API 문서 보기</a></p>
         </div>
         
@@ -176,10 +192,21 @@ eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0QGV4YW1wbGUuY29tIiwidXNlcklkIjoxLCJpYXQiOjE
 
                 <div class="section">
                     <h3>🔐 2단계: WebSocket 연결</h3>
-                    <input type="text" id="serverUrl" placeholder="서버 URL" value="https://api.auratalk.kro.kr/ws" readonly>
+                    
+                    <div class="connection-method">
+                        <h4>⚡ 연결 방법 선택:</h4>
+                        <p>CORS 문제로 SockJS가 실패할 수 있습니다. 다양한 방법을 시도해보세요.</p>
+                    </div>
+                    
                     <textarea id="authToken" placeholder="JWT 토큰을 여기에 붙여넣으세요 (Bearer 제외)" rows="3"></textarea>
-                    <button id="connectBtn" onclick="connect()">연결</button>
-                    <button id="disconnectBtn" onclick="disconnect()" disabled>연결 해제</button>
+                    
+                    <div class="method-buttons">
+                        <button id="connectSockJS" onclick="connectWithSockJS()">SockJS 연결 시도</button>
+                        <button id="connectWebSocket" onclick="connectWithWebSocket()">순수 WebSocket 연결</button>
+                        <button id="connectStompOverWS" onclick="connectStompOverWebSocket()">STOMP over WebSocket</button>
+                        <button id="disconnectBtn" onclick="disconnect()" disabled>연결 해제</button>
+                    </div>
+                    
                     <div id="connectionStatus" class="status disconnected">연결되지 않음</div>
                 </div>
 
@@ -211,6 +238,7 @@ eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0QGV4YW1wbGUuY29tIiwidXNlcklkIjoxLCJpYXQiOjE
                     <h3>📨 수신된 메시지</h3>
                     <button onclick="clearMessages()">메시지 지우기</button>
                     <button onclick="testServerHealth()">서버 상태 확인</button>
+                    <button onclick="testCorsEndpoint()">CORS 테스트</button>
                     <div id="messages" class="messages"></div>
                 </div>
             </div>
@@ -221,7 +249,9 @@ eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0QGV4YW1wbGUuY29tIiwidXNlcklkIjoxLCJpYXQiOjE
     <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
     <script>
         let stompClient = null;
+        let websocket = null;
         let subscriptions = new Map();
+        let connectionType = '';
 
         function addMessage(content, type = 'system') {
             const messagesDiv = document.getElementById('messages');
@@ -238,24 +268,30 @@ eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0QGV4YW1wbGUuY29tIiwidXNlcklkIjoxLCJpYXQiOjE
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
         }
 
-        function updateConnectionStatus(connected) {
+        function updateConnectionStatus(connected, type = '') {
             const statusDiv = document.getElementById('connectionStatus');
-            const connectBtn = document.getElementById('connectBtn');
+            const connectSockJS = document.getElementById('connectSockJS');
+            const connectWebSocket = document.getElementById('connectWebSocket');
+            const connectStompOverWS = document.getElementById('connectStompOverWS');
             const disconnectBtn = document.getElementById('disconnectBtn');
             const sendBtn = document.getElementById('sendBtn');
             const subscribeBtn = document.getElementById('subscribeBtn');
 
             if (connected) {
-                statusDiv.textContent = '✅ WSS 보안 연결됨 (HTTPS → WSS)';
+                statusDiv.textContent = `✅ ${type} 연결됨`;
                 statusDiv.className = 'status connected';
-                connectBtn.disabled = true;
+                connectSockJS.disabled = true;
+                connectWebSocket.disabled = true;
+                connectStompOverWS.disabled = true;
                 disconnectBtn.disabled = false;
                 sendBtn.disabled = false;
                 subscribeBtn.disabled = false;
             } else {
                 statusDiv.textContent = '❌ 연결되지 않음';
                 statusDiv.className = 'status disconnected';
-                connectBtn.disabled = false;
+                connectSockJS.disabled = false;
+                connectWebSocket.disabled = false;
+                connectStompOverWS.disabled = false;
                 disconnectBtn.disabled = true;
                 sendBtn.disabled = true;
                 subscribeBtn.disabled = true;
@@ -280,25 +316,43 @@ eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0QGV4YW1wbGUuY29tIiwidXNlcklkIjoxLCJpYXQiOjE
                 });
         }
 
-        function connect() {
-            const serverUrl = document.getElementById('serverUrl').value;
+        function testCorsEndpoint() {
+            addMessage('🔍 CORS 정책 테스트 중...', 'system');
+            
+            // SockJS info 엔드포인트 직접 테스트
+            fetch('https://api.auratalk.kro.kr/ws/info')
+                .then(response => {
+                    if (response.ok) {
+                        return response.json();
+                    }
+                    throw new Error(`HTTP ${response.status}`);
+                })
+                .then(data => {
+                    addMessage('✅ SockJS info 엔드포인트 접근 가능: ' + JSON.stringify(data), 'system');
+                })
+                .catch(error => {
+                    addMessage('❌ SockJS info 엔드포인트 CORS 차단: ' + error.message, 'error');
+                    addMessage('💡 해결책: 순수 WebSocket 연결을 시도하세요.', 'system');
+                });
+        }
+
+        function connectWithSockJS() {
             const authToken = document.getElementById('authToken').value.trim();
 
             if (!authToken) {
-                addMessage('⚠️ JWT 토큰이 필요합니다. 먼저 Swagger UI에서 로그인하여 토큰을 받으세요.', 'error');
-                alert('JWT 토큰을 입력해주세요. Swagger UI에서 로그인 후 토큰을 받을 수 있습니다.');
+                addMessage('⚠️ JWT 토큰이 필요합니다.', 'error');
                 return;
             }
 
-            addMessage('🔐 HTTPS 보안 연결 시도 중... (자동 WSS 업그레이드)', 'system');
+            addMessage('🔐 SockJS + STOMP 연결 시도 중...', 'system');
+            connectionType = 'SockJS + STOMP';
 
             try {
-                const socket = new SockJS(serverUrl);
+                const socket = new SockJS('https://api.auratalk.kro.kr/ws');
                 stompClient = Stomp.over(socket);
 
-                // 디버그 로그 활성화 (테스트용)
                 stompClient.debug = function(str) {
-                    addMessage('🔧 DEBUG: ' + str, 'system');
+                    addMessage('🔧 SockJS DEBUG: ' + str, 'system');
                 };
 
                 const connectHeaders = {
@@ -307,18 +361,104 @@ eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0QGV4YW1wbGUuY29tIiwidXNlcklkIjoxLCJpYXQiOjE
 
                 stompClient.connect(connectHeaders, 
                     function (frame) {
-                        addMessage('🎉 배포 서버 WebSocket 연결 성공! (WSS 보안 연결)', 'system');
-                        addMessage('📡 연결 정보: ' + frame, 'system');
-                        updateConnectionStatus(true);
+                        addMessage('🎉 SockJS 연결 성공!', 'system');
+                        updateConnectionStatus(true, connectionType);
                     },
                     function (error) {
-                        addMessage('❌ 연결 실패: ' + error, 'error');
-                        addMessage('💡 가능한 원인: 1) JWT 토큰 만료 2) 서버 오류 3) 네트워크 문제', 'error');
+                        addMessage('❌ SockJS 연결 실패: ' + error, 'error');
+                        addMessage('💡 CORS 문제로 실패했다면 순수 WebSocket을 시도하세요.', 'system');
                         updateConnectionStatus(false);
                     }
                 );
             } catch (error) {
-                addMessage('❌ 연결 초기화 실패: ' + error.message, 'error');
+                addMessage('❌ SockJS 초기화 실패: ' + error.message, 'error');
+                updateConnectionStatus(false);
+            }
+        }
+
+        function connectWithWebSocket() {
+            const authToken = document.getElementById('authToken').value.trim();
+
+            if (!authToken) {
+                addMessage('⚠️ JWT 토큰이 필요합니다.', 'error');
+                return;
+            }
+
+            addMessage('🔐 순수 WebSocket 연결 시도 중...', 'system');
+            connectionType = '순수 WebSocket';
+
+            try {
+                // HTTPS에서는 자동으로 WSS 사용
+                const wsUrl = 'wss://api.auratalk.kro.kr/ws/websocket';
+                websocket = new WebSocket(wsUrl);
+
+                websocket.onopen = function(event) {
+                    addMessage('🎉 WebSocket 연결 성공!', 'system');
+                    updateConnectionStatus(true, connectionType);
+                    
+                    // STOMP CONNECT 프레임 전송
+                    const connectFrame = `CONNECT\nAuthorization:Bearer ${authToken}\naccept-version:1.1,1.0\nheart-beat:10000,10000\n\n\x00`;
+                    websocket.send(connectFrame);
+                };
+
+                websocket.onmessage = function(event) {
+                    addMessage('📩 WebSocket 수신: ' + event.data, 'received');
+                };
+
+                websocket.onerror = function(error) {
+                    addMessage('❌ WebSocket 오류: ' + JSON.stringify(error), 'error');
+                    updateConnectionStatus(false);
+                };
+
+                websocket.onclose = function(event) {
+                    addMessage('👋 WebSocket 연결 해제됨', 'system');
+                    updateConnectionStatus(false);
+                };
+
+            } catch (error) {
+                addMessage('❌ WebSocket 초기화 실패: ' + error.message, 'error');
+                updateConnectionStatus(false);
+            }
+        }
+
+        function connectStompOverWebSocket() {
+            const authToken = document.getElementById('authToken').value.trim();
+
+            if (!authToken) {
+                addMessage('⚠️ JWT 토큰이 필요합니다.', 'error');
+                return;
+            }
+
+            addMessage('🔐 STOMP over WebSocket 연결 시도 중...', 'system');
+            connectionType = 'STOMP over WebSocket';
+
+            try {
+                // 순수 WebSocket으로 STOMP 연결
+                const wsUrl = 'wss://api.auratalk.kro.kr/ws/websocket';
+                const ws = new WebSocket(wsUrl);
+                stompClient = Stomp.over(ws);
+
+                stompClient.debug = function(str) {
+                    addMessage('🔧 STOMP/WS DEBUG: ' + str, 'system');
+                };
+
+                const connectHeaders = {
+                    'Authorization': `Bearer ${authToken}`
+                };
+
+                stompClient.connect(connectHeaders, 
+                    function (frame) {
+                        addMessage('🎉 STOMP over WebSocket 연결 성공!', 'system');
+                        updateConnectionStatus(true, connectionType);
+                    },
+                    function (error) {
+                        addMessage('❌ STOMP over WebSocket 연결 실패: ' + error, 'error');
+                        updateConnectionStatus(false);
+                    }
+                );
+
+            } catch (error) {
+                addMessage('❌ STOMP over WebSocket 초기화 실패: ' + error.message, 'error');
                 updateConnectionStatus(false);
             }
         }
@@ -332,9 +472,17 @@ eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0QGV4YW1wbGUuY29tIiwidXNlcklkIjoxLCJpYXQiOjE
                 updateSubscriptionsList();
 
                 stompClient.disconnect(function() {
-                    addMessage('👋 배포 서버 연결이 해제되었습니다.', 'system');
+                    addMessage('👋 STOMP 연결이 해제되었습니다.', 'system');
                     updateConnectionStatus(false);
                 });
+                stompClient = null;
+            }
+
+            if (websocket !== null) {
+                websocket.close();
+                websocket = null;
+                addMessage('👋 WebSocket 연결이 해제되었습니다.', 'system');
+                updateConnectionStatus(false);
             }
         }
 
@@ -348,18 +496,28 @@ eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0QGV4YW1wbGUuY29tIiwidXNlcklkIjoxLCJpYXQiOjE
                 return;
             }
 
-            if (stompClient && stompClient.connected) {
-                const message = {
-                    content: content,
-                    type: type
-                };
+            const message = {
+                content: content,
+                type: type
+            };
 
+            if (stompClient && stompClient.connected) {
                 try {
                     stompClient.send(`/app/chat/${chatroomId}`, {}, JSON.stringify(message));
-                    addMessage(`✅ 메시지 전송 완료: ${content} (채팅방 ${chatroomId})`, 'sent');
+                    addMessage(`✅ STOMP 메시지 전송: ${content} (채팅방 ${chatroomId})`, 'sent');
                     document.getElementById('messageContent').value = '';
                 } catch (error) {
-                    addMessage(`❌ 메시지 전송 실패: ${error.message}`, 'error');
+                    addMessage(`❌ STOMP 메시지 전송 실패: ${error.message}`, 'error');
+                }
+            } else if (websocket && websocket.readyState === WebSocket.OPEN) {
+                try {
+                    // STOMP SEND 프레임 생성
+                    const sendFrame = `SEND\ndestination:/app/chat/${chatroomId}\ncontent-type:application/json\n\n${JSON.stringify(message)}\x00`;
+                    websocket.send(sendFrame);
+                    addMessage(`✅ WebSocket 메시지 전송: ${content} (채팅방 ${chatroomId})`, 'sent');
+                    document.getElementById('messageContent').value = '';
+                } catch (error) {
+                    addMessage(`❌ WebSocket 메시지 전송 실패: ${error.message}`, 'error');
                 }
             } else {
                 alert('WebSocket이 연결되지 않았습니다.');
@@ -392,6 +550,15 @@ eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0QGV4YW1wbGUuY29tIiwidXNlcklkIjoxLCJpYXQiOjE
                     addMessage(`🔔 채팅방 ${chatroomId} 구독 시작`, 'system');
                 } catch (error) {
                     addMessage(`❌ 구독 실패: ${error.message}`, 'error');
+                }
+            } else if (websocket && websocket.readyState === WebSocket.OPEN) {
+                try {
+                    // STOMP SUBSCRIBE 프레임 생성
+                    const subscribeFrame = `SUBSCRIBE\nid:sub-${chatroomId}\ndestination:/topic/chatroom/${chatroomId}\n\n\x00`;
+                    websocket.send(subscribeFrame);
+                    addMessage(`🔔 WebSocket 채팅방 ${chatroomId} 구독 요청`, 'system');
+                } catch (error) {
+                    addMessage(`❌ WebSocket 구독 실패: ${error.message}`, 'error');
                 }
             } else {
                 alert('WebSocket이 연결되지 않았습니다.');
@@ -429,13 +596,17 @@ eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0QGV4YW1wbGUuY29tIiwidXNlcklkIjoxLCJpYXQiOjE
 
         // 페이지 로드 시 초기 메시지
         window.addEventListener('load', function() {
-            addMessage('🌐 배포 서버 WebSocket 테스트 페이지에 오신 것을 환영합니다!', 'system');
-            addMessage('🔐 HTTPS 환경에서 자동으로 WSS(WebSocket Secure) 연결을 사용합니다.', 'system');
-            addMessage('📝 1단계: Swagger UI에서 JWT 토큰을 받으세요.', 'system');
-            addMessage('🔌 2단계: 토큰을 입력하고 연결 버튼을 클릭하세요.', 'system');
+            addMessage('🌐 CORS 문제 해결을 위한 WebSocket 테스트 페이지', 'system');
+            addMessage('🔍 감지된 문제: SockJS CORS 정책 차단', 'error');
+            addMessage('💡 해결 방법: 다양한 연결 방식 제공', 'system');
+            addMessage('📝 1단계: JWT 토큰을 받으세요', 'system');
+            addMessage('🔌 2단계: 연결 방법을 선택하세요 (순수 WebSocket 권장)', 'system');
             
-            // 자동으로 서버 상태 확인
-            setTimeout(testServerHealth, 1000);
+            // 자동으로 서버 상태 및 CORS 확인
+            setTimeout(() => {
+                testServerHealth();
+                setTimeout(testCorsEndpoint, 2000);
+            }, 1000);
         });
     </script>
 </body>
